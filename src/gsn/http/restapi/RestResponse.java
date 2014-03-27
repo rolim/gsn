@@ -27,6 +27,7 @@
 package gsn.http.restapi;
 
 import java.util.HashMap;
+import java.util.Map;
 
 public class RestResponse {
 
@@ -79,6 +80,10 @@ public class RestResponse {
 
     public String removeHeaderKey(String key){
         return headers.remove(key);
+    }
+    
+    public Map<String, String> getHeaders(){
+    	return headers;
     }
 
     @Override

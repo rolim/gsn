@@ -30,16 +30,18 @@ package gsn.http.restapi;
 import gsn.Main;
 import gsn.http.ac.User;
 import gsn.http.ac.UserUtils;
-import org.apache.log4j.Logger;
+
+import java.io.IOException;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.List;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.io.IOException;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.List;
+
+import org.apache.log4j.Logger;
 
 public class RestServlet extends HttpServlet {
 
@@ -64,12 +66,11 @@ public class RestServlet extends HttpServlet {
     private static final String PARAMETER_TO = "to";
     private static final String PARAMETER_SIZE = "size";
 
-    private static final String FORMAT_JSON = "json";
-    private static final String FORMAT_CSV = "csv";
+    public static final String FORMAT_JSON = "json";
+    public static final String FORMAT_CSV = "csv";
 
     public void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
 
-        //response.getWriter().write(debugRequest(request, response));
         RestResponse restResponse = null;
 
         String sensor = null;
@@ -82,16 +83,13 @@ public class RestServlet extends HttpServlet {
         String str_date = null;
 
         User user = null;
-        boolean isFormatCSV = false;
 
         String format = request.getParameter(PARAMETER_FORMAT);
-        if (format == null){
+        if (format == null || !FORMAT_CSV.equals(format)){
             format = FORMAT_JSON;
         }
-        //create RequestHandler according to provided format (json, csv); json is default
-        RequestHandler requestHandler = null;
-        if (FORMAT_CSV.equals(format)) { requestHandler = new RequestHandlerCSV(); isFormatCSV = true; }
-        else { requestHandler = new RequestHandlerJSON(); }
+       
+        RequestHandler requestHandler = new RequestHandler(format);
 
         if (Main.getContainerConfig().isAcEnabled()) {     // added
             str_user = request.getParameter(PARAMETER_USERNAME);
@@ -144,8 +142,12 @@ public class RestServlet extends HttpServlet {
 
         response.setStatus(restResponse.getHttpStatus());
         response.setContentType(restResponse.getType());
-        if (isFormatCSV) response.setHeader(RestResponse.RESPONSE_HEADER_CONTENT_DISPOSITION_NAME, restResponse.getHeaderValue(RestResponse.RESPONSE_HEADER_CONTENT_DISPOSITION_NAME));
+    	for (String key: restResponse.getHeaders().keySet()){
+    		response.setHeader(key, restResponse.getHeaderValue(key));
+    	}
         response.getWriter().write(restResponse.getResponse());
+
+        requestHandler.finish();
     }
 
     public void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
