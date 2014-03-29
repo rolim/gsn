@@ -62,7 +62,7 @@ import org.json.simple.JSONObject;
 public class RequestHandler {
     private static transient Logger logger = Logger.getLogger(RequestHandler.class);
 
-    public static enum ErrorType {NO_SUCH_SENSOR, NO_SUCH_USER, NO_SENSOR_ACCESS, UNKNOWN_REQUEST, MALFORMED_DATE_FROM_TO, MALFORMED_DATE_DATE_FIELD, ERROR_IN_REQUEST}
+    public static enum ErrorType {NO_SUCH_SENSOR, NO_SUCH_USER, NO_SENSOR_ACCESS, UNKNOWN_REQUEST, MALFORMED_DATE_FROM_TO, MALFORMED_DATE_DATE_FIELD, MALFORMED_SIZE, ERROR_IN_REQUEST}
 
     private String format = RestServlet.FORMAT_JSON;
     
@@ -117,9 +117,15 @@ public class RequestHandler {
 
         long fromAsLong = 0;
         long toAsLong = 0;
+        int window = -1;
         try {
             fromAsLong = new java.text.SimpleDateFormat(stringConstantsProperties.getProperty("ISO_FORMAT")).parse(from).getTime();
             toAsLong = new java.text.SimpleDateFormat(stringConstantsProperties.getProperty("ISO_FORMAT")).parse(to).getTime();
+            if (size != null) window = Integer.parseInt(size);
+        } catch (NumberFormatException e){
+        	logger.error(e.getMessage(), e);
+            restResponse = errorResponse(ErrorType.MALFORMED_SIZE, user, sensor);
+            return restResponse;
         } catch (Exception e) {
             logger.error(e.getMessage(), e);
             restResponse = errorResponse(ErrorType.MALFORMED_DATE_FROM_TO, user, sensor);
@@ -133,7 +139,6 @@ public class RequestHandler {
         sensorObj.appendField(new DataField("time", "Time"));
         sensorObj.appendField(new DataField("timestamp", "Time"));
 
-        Vector<Double> stream = new Vector<Double>();
         Vector<Long> timestamps = new Vector<Long>();
         ArrayList<Vector<Double>> elements  = new ArrayList<Vector<Double>>();
         ArrayList<String> fields = new ArrayList<String>();
@@ -143,70 +148,14 @@ public class RequestHandler {
             fields.add(df.getName().toLowerCase());
             sensorObj.appendField(df);
         }
-
-        Connection conn = null;
-        ResultSet resultSet = null;
-        boolean restrict = false;
-
-        if (size != null)  {
-            restrict = true;
+        
+        boolean errorFlag = !getData(sensor, fields, fromAsLong, toAsLong, window, elements, timestamps);
+        
+        if (errorFlag){
+        	return errorResponse(ErrorType.ERROR_IN_REQUEST, user, sensor);
         }
-
-        try {
-            conn = Main.getStorage(sensor).getConnection();
-
-            StringBuilder query;
-            if (restrict) {
-                Integer window = new Integer(size);
-                query = new StringBuilder("select * from ")
-                        .append(sensor)
-                        .append(" where timed >= ")
-                        .append(fromAsLong)
-                        .append(" and timed <=")
-                        .append(toAsLong)
-                        .append(" order by timed desc")
-                        .append(" limit 0,"+(window+1));
-            } else {
-                query = new StringBuilder("select * from ")
-                        .append(sensor)
-                        .append(" where timed >= ")
-                        .append(fromAsLong)
-                        .append(" and timed <=")
-                        .append(toAsLong);
-            }
-            
-            resultSet = Main.getStorage(sensor).executeQueryWithResultSet(query, conn);
-            
-            if (restrict) {
-            	resultSet.afterLast();
-            	while (resultSet.previous()) {
-                    timestamps.add(resultSet.getLong("timed"));
-                    for (String fieldname : fields) {
-                        stream.add(getDouble(resultSet, fieldname));
-                    }
-                    elements.add(stream);
-                    stream = new Vector<Double>();
-                }
-            } else {
-            	while (resultSet.next()) {
-            		timestamps.add(resultSet.getLong("timed"));
-            		for (String fieldname : fields) {
-                        stream.add(getDouble(resultSet, fieldname));
-                    }
-                    elements.add(stream);
-                    stream = new Vector<Double>();
-                }
-            }
-            sensorObj.setValues(elements, timestamps);
-
-        } catch (SQLException e) {
-            logger.error(e.getMessage(), e);
-            restResponse = errorResponse(ErrorType.ERROR_IN_REQUEST, user, sensor);
-            return restResponse;
-        } finally {
-            Main.getStorage(sensor).close(resultSet);
-            Main.getStorage(sensor).close(conn);
-        }
+        
+        sensorObj.setValues(elements, timestamps);
 
         List<VirtualSensor> listSens = new LinkedList<VirtualSensor>();
         listSens.add(sensorObj);
@@ -227,12 +176,17 @@ public class RequestHandler {
         String filename = String.format(stringConstantsProperties.getProperty("FILENAME_SENSOR_FIELD"), sensor, field, datetime);
         setRestResponseParams(restResponse, filename);
 
-        boolean errorFlag = false;
         long fromAsLong = 0;
         long toAsLong = 0;
+        int window = -1;
         try {
             fromAsLong = new java.text.SimpleDateFormat(stringConstantsProperties.getProperty("ISO_FORMAT")).parse(from).getTime();
             toAsLong = new java.text.SimpleDateFormat(stringConstantsProperties.getProperty("ISO_FORMAT")).parse(to).getTime();
+            if (size != null) window = Integer.parseInt(size);
+        } catch (NumberFormatException e){
+        	logger.error(e.getMessage(), e);
+            restResponse = errorResponse(ErrorType.MALFORMED_SIZE, user, sensor);
+            return restResponse;
         } catch (Exception e) {
             logger.error(e.getMessage(), e);
             restResponse = errorResponse(ErrorType.MALFORMED_DATE_FROM_TO, user, sensor);
@@ -252,55 +206,19 @@ public class RequestHandler {
         	}
         }
         
-        Vector<Double> stream = new Vector<Double>();
         ArrayList<Vector<Double>> elements  = new ArrayList<Vector<Double>>();
         Vector<Long> timestamps = new Vector<Long>();
-
-
-        if (size != null)  {
-            Integer window = new Integer(size);
-            Connection conn = null;
-            ResultSet resultSet = null;
-
-            try {
-                conn = Main.getStorage(sensor).getConnection();
-                StringBuilder query = new StringBuilder("select timed, ")
-                        .append(field)
-                        .append(" from ")
-                        .append(sensor)
-                        .append(" where timed >= ")
-                        .append(fromAsLong)
-                        .append(" and timed <=")
-                        .append(toAsLong)
-                        .append(" order by timed desc")
-                        .append(" limit 0,"+(window+1));//why size+1?
-
-                resultSet = Main.getStorage(sensor).executeQueryWithResultSet(query, conn);
-
-                resultSet.afterLast();
-            	while (resultSet.previous()) {
-                    timestamps.add(resultSet.getLong(1));
-                    stream.add(getDouble(resultSet,field));
-                    elements.add(stream);
-                    stream = new Vector<Double>();
-                }
-            } catch (SQLException e) {
-                logger.error(e.getMessage(), e);
-                errorFlag = true;
-            } finally {
-                Main.getStorage(sensor).close(resultSet);
-                Main.getStorage(sensor).close(conn);
-            }
-        } else {
-            errorFlag = !getData(sensor, field, fromAsLong, toAsLong, elements, timestamps);
-        }
         
-        sensorObj.setValues(elements, timestamps);
+        ArrayList<String> fieldList = new ArrayList<String>();
+        fieldList.add(field);
 
-        if (errorFlag) {
-            restResponse = errorResponse(ErrorType.ERROR_IN_REQUEST, user, sensor);
-            return restResponse;
+        boolean errorFlag = !getData(sensor, fieldList, fromAsLong, toAsLong, window, elements, timestamps);
+        
+        if (errorFlag){
+        	return errorResponse(ErrorType.ERROR_IN_REQUEST, user, sensor);
         }
+ 
+        sensorObj.setValues(elements, timestamps);
 
         List<VirtualSensor> listSens = new LinkedList<VirtualSensor>();
         listSens.add(sensorObj);
@@ -333,7 +251,7 @@ public class RequestHandler {
         	restResponse.setResponse(GridTools.executeQueryForGridAsJSON(sensor, timestamp));
         } catch (OutOfMemoryError e){
         	JSONObject jsonObject = new JSONObject();
-        	jsonObject.put("error", stringConstantsProperties.getProperty("ERROR_OUT_OF_MEMORY_ERROR"));
+        	jsonObject.put("error", stringConstantsProperties.getProperty("ERROR_OUT_OF_MEMORY_ERROR_MSG"));
         	restResponse.setResponse(jsonObject.toJSONString());
             restResponse.setHttpStatus(RestResponse.HTTP_STATUS_ERROR);
             restResponse.setType(RestResponse.JSON_CONTENT_TYPE);
@@ -465,6 +383,10 @@ public class RequestHandler {
                 errorMessage = stringConstantsProperties.getProperty("ERROR_MALFORMED_DATE_DATE_FIELD_MSG");
                 filename = stringConstantsProperties.getProperty("ERROR_MALFORMED_DATE_DATE_FIELD_FILENAME");
                 break;
+            case MALFORMED_SIZE:
+            	errorMessage = stringConstantsProperties.getProperty("ERROR_MALFORMED_SIZE_MSG");
+                filename = stringConstantsProperties.getProperty("ERROR_MALFORMED_SIZE_FILENAME");
+                break;
             case ERROR_IN_REQUEST:
                 errorMessage = stringConstantsProperties.getProperty("ERROR_ERROR_IN_REQUEST_MSG");
                 filename = stringConstantsProperties.getProperty("ERROR_ERROR_IN_REQUEST_FILENAME");
@@ -572,7 +494,6 @@ public class RequestHandler {
     
     
     //helper methods
-       
     private void setRestResponseParams(RestResponse restResponse, String filename){
     	if (RestServlet.FORMAT_CSV.equals(format)) {
     		restResponse.setType(RestResponse.CSV_CONTENT_TYPE);
@@ -583,40 +504,60 @@ public class RequestHandler {
         }
     	restResponse.setHttpStatus(RestResponse.HTTP_STATUS_OK);
     }
-
-    private boolean getData(String sensor, String field, long from, long to, List<Vector<Double>> elements, Vector<Long> timestamps) {
-        Connection conn = null;
+    
+    private boolean getData(String sensor, List<String> fields, long from, long to, int size, List<Vector<Double>> elements, Vector<Long> timestamps){
+    	Connection connection = null;
         ResultSet resultSet = null;
 
         boolean result = true;
 
         try {
-            conn = Main.getStorage(sensor).getConnection();
-            StringBuilder query = new StringBuilder("select timed, ")
-                    .append(field)
-                    .append(" from ")
-                    .append(sensor)
-                    .append(" where timed >= ")
-                    .append(from)
-                    .append(" and timed<=")
-                    .append(to);
-
-            resultSet = Main.getStorage(sensor).executeQueryWithResultSet(query, conn);
-
-            while (resultSet.next()) {
-                Vector<Double> stream = new Vector<Double>();
-                timestamps.add(resultSet.getLong(1));
-                stream.add(getDouble(resultSet,field));
-                elements.add(stream);
-                
+        	connection = Main.getStorage(sensor).getConnection();
+            StringBuilder query = new StringBuilder("select timed");
+            
+            for (int i=0; i<fields.size(); i++){
+            	query.append(", " + fields.get(i));
             }
-
+            query.append(" from ")
+                .append(sensor)
+            	.append(" where timed >=")
+            	.append(from)
+            	.append(" and timed <=")
+            	.append(to);
+            
+            if (size > 0) {
+            	query.append(" order by timed desc")
+                	.append(" limit 0," + size);
+            }
+            
+            resultSet = Main.getStorage(sensor).executeQueryWithResultSet(query, connection);
+            
+            if (size > 0) {
+            	resultSet.afterLast();
+            	while (resultSet.previous()) {
+            		Vector<Double> stream = new Vector<Double>();
+                    timestamps.add(resultSet.getLong(1));
+                    for (int i=0; i<fields.size(); i++){
+                    	stream.add(getDouble(resultSet, fields.get(i)));
+                    }
+                    elements.add(stream);
+                }
+            } else {
+            	while (resultSet.next()) {
+                	Vector<Double> stream = new Vector<Double>();
+            		timestamps.add(resultSet.getLong("timed"));
+            		for (int i=0; i<fields.size(); i++){
+                    	stream.add(getDouble(resultSet, fields.get(i)));
+                    }
+                    elements.add(stream);
+                }
+            }
         } catch (SQLException e) {
             logger.error(e.getMessage(), e);
             result = false;
         } finally {
             Main.getStorage(sensor).close(resultSet);
-            Main.getStorage(sensor).close(conn);
+            Main.getStorage(sensor).close(connection);
         }
 
         return result;
@@ -751,6 +692,7 @@ public class RequestHandler {
         for ( KeyValue df : vsconf.getAddressing()){
         	metadata.put(df.getKey().toString().toLowerCase().trim(), df.getValue().toString().trim());
         }
+        metadata.put(stringConstantsProperties.getProperty("DESCRIPTION"), vsconf.getDescription());
         return metadata;
 	}
 
