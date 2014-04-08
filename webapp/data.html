@@ -15,6 +15,9 @@
         <script type="text/javascript" src="js/jquery-1.2.6/ui/jquery-ui-datepicker-1.5.2.min.js"></script>
         <script type="text/javascript" src="js/jquery.flot.pack.js"></script>
         <script type="text/javascript" src="js/jquery.tablesorter.min.js"></script>
+        <script type="text/javascript" src="js/d3plots/histogram.js"></script>
+        <script type="text/javascript" src="js/d3plots/scatterplot.js"></script>
+        <script type="text/javascript" src="js/d3plots/timeseries.js"></script>
         <script type="text/javascript">
             /* XML object loaded from the REQUEST_LIST_OF_VIRTUAL_SENSORS GSN request */
             var lovs = null;
@@ -370,6 +373,19 @@
                     csv_to_json($(this),drawChart);
                 });
 
+                $(".d3").click(function(){
+                    $("#plottype").change(function(){
+                        var choice = $("#plottype").val();
+                        $('#plotContainer').empty();
+                        if (choice == '') return;
+
+                        datasets={};
+                        if (choice == 'drawHistogram') csv_to_json($(this),drawHistogram);
+                        else if (choice == 'drawScatterplot') csv_to_json($(this),drawScatterplot);
+                        else if (choice == 'drawTimeseries') csv_to_json($(this),drawTimeseries);
+                    });
+                });
+
                 $(".grid").click(function(){
                     function drawGrid(l_datasets){
                         $("#sensorSelect").empty();
@@ -485,8 +501,9 @@
                                         <div class="time-range">
                                             <div>
                                                 <br />
-                                            <span>From</span><input id="datepicker_from" name="from" size="16" type="text" value="" /><span>To</span><input id="datepicker_to" name="to" size="16" type="text" value="" /></div>
-                                            <br />
+                                                <span>From</span><input id="datepicker_from" name="from" size="16" type="text" value="" /><span>To</span><input id="datepicker_to" name="to" size="16" type="text" value="" /></div>
+
+                                            <br/> <br/>
                                         </div>
                                         <div class="conditions-container">
                                             <a id="add-condition" href="#">Add Condition</a>
@@ -501,6 +518,7 @@
                                             <ul>
                                                 <li class="ui-tabs-nav-item"><a href="#fragment-1-1">Download</a></li>
                                                 <li class="ui-tabs-nav-item"><a class="plot" href="#fragment-1-2">Plot</a></li>
+                                                <li class="ui-tabs-nav-item"><a class="d3" href="#fragment-1-4">Plots D3</a></li>
                                                 <li class="ui-tabs-nav-item"><a class="grid" href="#fragment-1-3"><span>Table</span></a></li>
                                             </ul>
                                             <div id="fragment-1-1">
@@ -529,6 +547,16 @@
                                                     <option value="">(none)</option>
                                                 </select>
                                                 <div id="gridContainer"></div>
+                                            </div>
+                                            <div id="fragment-1-4">
+                                                <select id="plottype">
+                                                    <option value="" selected="selected">None</option>
+                                                    <option value="drawScatterplot">Scatterplot</option>
+                                                    <option value="drawHistogram">Histogram</option>
+                                                    <option value="drawTimeseries">Timeseries</option>
+                                                </select>
+                                                <div id="plotContainer">
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
